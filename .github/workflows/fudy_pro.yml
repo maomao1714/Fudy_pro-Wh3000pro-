@@ -203,7 +203,7 @@ jobs:
         run: |
           TAG="$(date +"%Y.%m.%d-%H%M")"
           echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
-          cat > "$GITHUB_WORKSPACE/release.txt" << REOF
+          cat > "$GITHUB_WORKSPACE/release.txt" << 'REOF'
           📦 华思飞 WH3000 Pro LEDE 固件
 
           🕒 编译时间：$(date +"%Y年%m月%d日 %H:%M")
@@ -230,4 +230,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: steps.tag.outputs.status == 'success'
         with:
-          tag_name: ${{ steps.tag
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          body_path: ${{ github.workspace }}/release.txt
+          files: ${{ env.FIRMWARE }}/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 清理旧的 Releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        if: env.UPLOAD_RELEASE == 'true'
+        with:
+          keep_latest: 5
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
