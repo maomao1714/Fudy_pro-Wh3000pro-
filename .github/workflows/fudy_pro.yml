@@ -23,6 +23,10 @@ env:
   UPLOAD_RELEASE: true
   UPLOAD_ARTIFACTS: true
   TZ: Asia/Shanghai
+  GOPROXY: https://proxy.golang.org,https://goproxy.cn,direct
+  GONOSUMCHECK: "*"
+  GONOSUMDB: "*"
+  GOFLAGS: -mod=mod
 
 permissions:
   contents: write
