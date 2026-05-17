@@ -10,7 +10,9 @@ echo "src-git lucky https://github.com/gdy666/luci-app-lucky.git" >> feeds.conf.
 # 添加 Qmodem 软件源（4G/5G模块管理）
 echo "src-git qmodem https://github.com/FUjr/modem_feeds.git;main" >> feeds.conf.default
 
-# 如果你需要 SSR-Plus，取消下面这行的注释
-# echo "src-git helloworld https://github.com/fw876/helloworld.git" >> feeds.conf.default
+# 添加 rtp2httpd 软件源（IPTV 组播转单播）
+# 使用 main 分支，feeds update 后在 diy-part2 里替换为 Makefile.versioned
+# Makefile.versioned 已包含固定版本号和 PKG_HASH，从 Release 下载源码，无需 Node.js 构建前端
+echo "src-git rtp2httpd https://github.com/stackia/rtp2httpd.git" >> feeds.conf.default
 
 echo "✅ 软件源添加完成"
