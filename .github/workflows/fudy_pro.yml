@@ -171,7 +171,12 @@ jobs:
         run: |
           cd openwrt
           echo ">>> 开始编译，时间：$(date)  核心：$(nproc)"
-          make -j$(nproc) || make -j1 V=s
+          if ! make -j$(nproc); then
+            echo ">>> 多核编译失败，切换到单核详细模式..."
+            make -j1 V=s 2>&1 | tail -n 100
+            echo ">>> 编译失败，退出"
+            exit 1
+          fi
           echo ">>> 编译完成，时间：$(date)"
           echo "status=success" >> "$GITHUB_OUTPUT"
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config \
@@ -248,4 +253,3 @@ jobs:
           delete_tags: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
