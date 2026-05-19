@@ -1,14 +1,11 @@
 #!/bin/bash
 # =====================================================
-# DIY 脚本第二部分 - 最终修复版（移除 docker-compose）
-# 在 feeds install 之后、make defconfig 之前执行
+# DIY 脚本第二部分 - 预置配置文件终极版
+# 不再依赖 uci-defaults，直接写入 /etc/config 文件
 # =====================================================
 
-# =====================================================
-# 1. 修改路由器默认主机名
-# =====================================================
+# 1. 主机名
 sed -i 's/OpenWrt/WH3000/g' package/base-files/files/bin/config_generate 2>/dev/null || true
-
 mkdir -p files/etc/uci-defaults
 cat > files/etc/uci-defaults/01-hostname << 'HOSTNAME_EOF'
 #!/bin/sh
@@ -19,11 +16,9 @@ uci commit system
 exit 0
 HOSTNAME_EOF
 chmod +x files/etc/uci-defaults/01-hostname
-echo ">>> [1/6] 主机名设置完成"
+echo ">>> [1/6] 主机名已配置"
 
-# =====================================================
-# 2. 修改默认 LuCI 主题为 Design
-# =====================================================
+# 2. 主题
 if [ -f package/lean/default-settings/files/zzz-default-settings ]; then
     sed -i 's/luci-theme-bootstrap/luci-theme-design/g' \
         package/lean/default-settings/files/zzz-default-settings
@@ -35,9 +30,7 @@ find feeds/luci -name "Makefile" 2>/dev/null \
     done
 echo ">>> [2/6] 默认主题改为 luci-theme-design"
 
-# =====================================================
-# 3. 修复 Lucky 执行权限
-# =====================================================
+# 3. Lucky 权限
 echo ">>> [3/6] 修复 Lucky 执行权限..."
 find feeds/lucky/ -type f \( -name "lucky" -o -name "lucky*" \) \
     -exec chmod +x {} \; 2>/dev/null || true
@@ -49,118 +42,88 @@ find package/ -path "*/lucky/files*" -type f \
 echo ">>> Lucky 权限修复完成"
 
 # =====================================================
-# 4. ★ WiFi 修复：只设置 SSID / 密码，不手动 wifi up ★
+# 4. ★ 预置无线配置文件（不再依赖启动脚本） ★
 # =====================================================
-cat > files/etc/uci-defaults/99-wifi-setup << 'WIFI_EOF'
-#!/bin/sh
-# WiFi 初始设置（不调用 wifi up，避免破坏网络启动流程）
+mkdir -p files/etc/config
+cat > files/etc/config/wireless << 'WIFI_CONF'
+config wifi-device 'radio0'
+        option type 'mac80211'
+        option channel 'auto'
+        option hwmode '11g'
+        option path 'platform/soc/18000000.wifi'
+        option htmode 'HT40'
+        option disabled '0'
 
-# 确保 radio 开启
-uci set wireless.radio0.disabled='0' 2>/dev/null || true
-uci set wireless.radio1.disabled='0' 2>/dev/null || true
+config wifi-iface 'default_radio0'
+        option device 'radio0'
+        option network 'lan'
+        option mode 'ap'
+        option ssid 'WH3000_2.4G'
+        option encryption 'psk2+ccmp'
+        option key 'password123'
 
-# 设置 5G WiFi
-uci set wireless.default_radio0.ssid='WH3000_5G' 2>/dev/null || true
-uci set wireless.default_radio0.encryption='psk2+ccmp' 2>/dev/null || true
-uci set wireless.default_radio0.key='password123' 2>/dev/null || true
+config wifi-device 'radio1'
+        option type 'mac80211'
+        option channel 'auto'
+        option hwmode '11a'
+        option path 'platform/soc/18000000.wifi+1'
+        option htmode 'VHT80'
+        option disabled '0'
 
-# 设置 2.4G WiFi
-uci set wireless.default_radio1.ssid='WH3000_2.4G' 2>/dev/null || true
-uci set wireless.default_radio1.encryption='psk2+ccmp' 2>/dev/null || true
-uci set wireless.default_radio1.key='password123' 2>/dev/null || true
-
-uci commit wireless
-logger -t wifi-setup "WiFi SSID and key configured"
-exit 0
-WIFI_EOF
-chmod +x files/etc/uci-defaults/99-wifi-setup
-echo ">>> [4/6] WiFi 配置已写入（不手动 wifi up）"
+config wifi-iface 'default_radio1'
+        option device 'radio1'
+        option network 'lan'
+        option mode 'ap'
+        option ssid 'WH3000_5G'
+        option encryption 'psk2+ccmp'
+        option key 'password123'
+WIFI_CONF
+echo ">>> [4/6] 无线配置已预置（路径已修正为 +1）"
 
 # =====================================================
-# 5. ★ Docker 数据目录 + 自动挂载修复 ★
+# 5. ★ 预置 fstab 和 Docker 配置文件 ★
 # =====================================================
+cat > files/etc/config/fstab << 'FSTAB_CONF'
+config global
+        option anon_mount '1'
 
-# 5a. 自动挂载配置（打开全局自动挂载 + 添加 mmcblk0p7）
-cat > files/etc/uci-defaults/10-fstab << 'FSTAB_EOF'
+config mount
+        option target '/mnt/mmcblk0p7'
+        option device '/dev/mmcblk0p7'
+        option fstype 'ext4'
+        option options 'rw,noatime'
+        option enabled '1'
+FSTAB_CONF
+
+cat > files/etc/config/docker << 'DOCKER_CONF'
+config globals
+        option data_root '/mnt/mmcblk0p7/docker'
+DOCKER_CONF
+
+mkdir -p files/etc/uci-defaults
+cat > files/etc/uci-defaults/20-docker-prepare << 'DOCKER_PREP'
 #!/bin/sh
-# 全局：自动挂载未分配空间
-uci set fstab.@global[0].anon_mount='1'
-uci commit fstab
-
-# 添加 mmcblk0p7 挂载点（如果不存在）
-if ! grep -q mmcblk0p7 /etc/config/fstab 2>/dev/null; then
-    uci add fstab mount
-    uci set fstab.@mount[-1].target='/mnt/mmcblk0p7'
-    uci set fstab.@mount[-1].device='/dev/mmcblk0p7'
-    uci set fstab.@mount[-1].fstype='ext4'
-    uci set fstab.@mount[-1].options='rw,noatime'
-    uci set fstab.@mount[-1].enabled='1'
-    uci commit fstab
-    mkdir -p /mnt/mmcblk0p7
-    logger -t fstab "mmcblk0p7 mount added"
-fi
-exit 0
-FSTAB_EOF
-chmod +x files/etc/uci-defaults/10-fstab
-
-# 5b. Docker 运行时配置（确保 UCI 提前执行）
-cat > files/etc/uci-defaults/20-docker-config << 'DOCKER_EOF'
-#!/bin/sh
-# 无论分区是否挂载，先设置 UCI 中的 Docker 数据目录
-uci set docker.globals.data_root='/mnt/mmcblk0p7/docker'
-uci commit docker
-
-MOUNT_POINT="/mnt/mmcblk0p7"
-DAEMON_DIR="/tmp/dockerd"
-DAEMON_JSON="$DAEMON_DIR/daemon.json"
-
-# 等待挂载点就绪（最多 15 秒）
-count=0
-while [ $count -lt 15 ]; do
-    if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
-        break
-    fi
+# 等待分区挂载后创建 docker 目录
+MOUNT="/mnt/mmcblk0p7"
+for i in $(seq 1 15); do
+    mountpoint -q "$MOUNT" && break
     sleep 1
-    count=$((count + 1))
 done
-
-# 如果成功挂载，写入运行时 daemon.json
-if mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
-    DOCKER_DATA="$MOUNT_POINT/docker"
-    mkdir -p "$DOCKER_DATA" "$DAEMON_DIR"
-    cat > "$DAEMON_JSON" << JSONEOF
-{
-  "data-root": "$DOCKER_DATA",
-  "storage-driver": "overlay2",
-  "storage-opts": [
-    "overlay2.override_kernel_check=true"
-  ],
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "10m",
-    "max-file": "3"
-  },
-  "iptables": true,
-  "live-restore": true
-}
-JSONEOF
-    logger -t docker-config "Docker data-root set to $DOCKER_DATA"
+if mountpoint -q "$MOUNT"; then
+    mkdir -p "$MOUNT/docker"
+    logger -t docker-prepare "Docker data directory ready"
 else
-    logger -t docker-config "WARNING: $MOUNT_POINT not mounted, Docker will use /opt/docker"
+    logger -t docker-prepare "WARNING: $MOUNT not mounted"
 fi
-
 exit 0
-DOCKER_EOF
-chmod +x files/etc/uci-defaults/20-docker-config
+DOCKER_PREP
+chmod +x files/etc/uci-defaults/20-docker-prepare
 
-echo ">>> [5/6] Docker 配置完成（分区自动挂载 + 数据目录已设置）"
+echo ">>> [5/6] 分区挂载和 Docker 目录已预置"
 
-# =====================================================
-# 6. Web 界面 / Samba / rpcd 优化
-# =====================================================
+# 6. 系统优化（预置部分 uci 配置）
 cat > files/etc/uci-defaults/98-system-optimize << 'OPT_EOF'
 #!/bin/sh
-# uhttpd 优化
 uci -q set uhttpd.main.max_connections='100' 2>/dev/null || true
 uci -q set uhttpd.main.max_requests='10' 2>/dev/null || true
 uci -q set uhttpd.main.http_keepalive='20' 2>/dev/null || true
@@ -168,26 +131,20 @@ uci -q set uhttpd.main.script_timeout='60' 2>/dev/null || true
 uci -q set uhttpd.main.network_timeout='30' 2>/dev/null || true
 uci commit uhttpd 2>/dev/null || true
 
-# rpcd 超时
 uci -q set rpcd.@rpcd[0].timeout='60' 2>/dev/null || true
 uci commit rpcd 2>/dev/null || true
 
-# Samba 禁用 IPv6
 uci -q set samba4.@samba[0].disable_ipv6='1' 2>/dev/null || true
 uci commit samba4 2>/dev/null || true
 
-# LuCI 语言
 uci set luci.main.lang='zh_Hans' 2>/dev/null || true
 uci commit luci 2>/dev/null || true
-
 exit 0
 OPT_EOF
 chmod +x files/etc/uci-defaults/98-system-optimize
 echo ">>> [6/6] 系统优化脚本已写入"
 
-# =====================================================
 # Banner
-# =====================================================
 mkdir -p files/etc
 cat > files/etc/banner << 'BAN_EOF'
  __      __ _   _  _____   ___   ___   ___
@@ -200,8 +157,8 @@ BAN_EOF
 
 echo ""
 echo "======================================"
-echo " DIY 第二部分全部完成（无 docker-compose）"
-echo " 主机名 / 主题 / Lucky 权限"
-echo " WiFi 配置（不手动 wifi up）"
-echo " Docker 数据目录 : /mnt/mmcblk0p7/docker（自动挂载）"
+echo " DIY 第二部分完成（预置配置文件版）"
+echo " 无线配置：已预置 /etc/config/wireless"
+echo " 分区挂载：已预置 /etc/config/fstab"
+echo " Docker  ：已预置 /etc/config/docker"
 echo "======================================"
