@@ -1,4 +1,4 @@
-name: 编译 Lede Fudy-pro固件
+name: 编译 OpenWrt 固件 (华思飞 WH3000 / LEDE)
 
 on:
   workflow_dispatch:
@@ -112,26 +112,33 @@ jobs:
           cd openwrt
           "$GITHUB_WORKSPACE/$DIY_P1_SH"
 
-      - name: 更新并安装软件包列表（保留 docker-compose，由 diy-part2 降级修复）
+      - name: 更新并安装软件包列表（移除 docker-compose 以避免编译失败）
         run: |
           cd openwrt
           ./scripts/feeds update -a
 
-          echo ">>> 移除问题包（仅移除 vsftpd 冲突，保留 docker-compose）"
+          echo ">>> 移除问题包"
 
           # vsftpd：与 vsftpd-alt 文件冲突
           rm -rf feeds/qmodem/luci-app-vsftpd            2>/dev/null || true
           rm -rf feeds/luci/applications/luci-app-vsftpd 2>/dev/null || true
           rm -rf feeds/packages/net/vsftpd               2>/dev/null || true
 
+          # docker-compose：Go 依赖版本冲突，无法编译，直接移除
+          rm -rf feeds/packages/utils/docker-compose     2>/dev/null || true
+
+          # luci-app-dockerman 可能强依赖 docker-compose，一并移除
+          rm -rf feeds/luci/applications/luci-app-dockerman 2>/dev/null || true
+
           echo ">>> 剩余 vsftpd 相关："
           find feeds -maxdepth 5 -name "*vsftpd*"          2>/dev/null || echo "✅ 无残留"
-
-          # 注意：不再删除 docker-compose 和 luci-app-dockerman，
-          # 由 diy-part2.sh 将 docker-compose 降级到 v2.27.1 来修复编译错误。
+          echo ">>> 剩余 docker-compose 相关："
+          find feeds -maxdepth 5 -name "*docker-compose*"  2>/dev/null || echo "✅ 无残留"
+          echo ">>> 剩余 dockerman 相关："
+          find feeds -maxdepth 5 -name "*dockerman*"       2>/dev/null || echo "✅ 无残留"
 
           ./scripts/feeds install -a
-          echo ">>> feeds 安装完成（包含 docker-compose）"
+          echo ">>> feeds 安装完成（不含 docker-compose）"
 
       - name: 复制配置文件
         run: |
@@ -246,7 +253,7 @@ jobs:
 
           ✅ 已包含功能：
           - LuCI Design 主题
-          - Docker 容器支持（docker/dockerd/containerd/docker-compose）
+          - Docker 容器支持（docker/dockerd/containerd，不含 docker-compose）
           - Lucky 内网穿透/DDNS
           - Qmodem 4G/5G 模块管理
           - OpenVPN 服务端
@@ -255,8 +262,10 @@ jobs:
           - rtp2httpd IPTV 组播转单播
           - 带宽监控 / UPnP / WOL
           - WiFi 首次启动修复
+          - Docker 数据目录修复（自动挂载 /mnt/mmcblk0p7）
 
           📌 刷机前请备份当前配置！
+          📌 首次启动前请确保 /dev/mmcblk0p7 已格式化为 ext4
           REOF
           echo "status=success" >> "$GITHUB_OUTPUT"
 
