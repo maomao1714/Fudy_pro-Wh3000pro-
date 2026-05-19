@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================
-# DIY 脚本第二部分 - 最终修复版（保留 docker-compose）
+# DIY 脚本第二部分 - 最终修复版（移除 docker-compose）
 # 在 feeds install 之后、make defconfig 之前执行
 # =====================================================
 
@@ -19,7 +19,7 @@ uci commit system
 exit 0
 HOSTNAME_EOF
 chmod +x files/etc/uci-defaults/01-hostname
-echo ">>> [1/7] 主机名设置完成"
+echo ">>> [1/6] 主机名设置完成"
 
 # =====================================================
 # 2. 修改默认 LuCI 主题为 Design
@@ -33,28 +33,12 @@ find feeds/luci -name "Makefile" 2>/dev/null \
     | while read f; do
         sed -i 's/luci-theme-bootstrap/luci-theme-design/g' "$f"
     done
-echo ">>> [2/7] 默认主题改为 luci-theme-design"
+echo ">>> [2/6] 默认主题改为 luci-theme-design"
 
 # =====================================================
-# 3. 修复 docker-compose 编译失败（降级到 v2.27.1）
+# 3. 修复 Lucky 执行权限
 # =====================================================
-COMPOSE_MK="feeds/packages/utils/docker-compose/Makefile"
-if [ -f "$COMPOSE_MK" ]; then
-    echo ">>> [3/7] 修复 docker-compose 版本（降级）..."
-    cp "$COMPOSE_MK" "${COMPOSE_MK}.bak"
-    sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:=2.27.1/' "$COMPOSE_MK"
-    sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$COMPOSE_MK"
-    sed -i '/^PKG_MIRROR_HASH/d' "$COMPOSE_MK"
-    echo ">>> docker-compose 已锁定为 v2.27.1"
-    grep "^PKG_VERSION" "$COMPOSE_MK"
-else
-    echo "⚠️  [3/7] 未找到 docker-compose Makefile，跳过"
-fi
-
-# =====================================================
-# 4. 修复 Lucky 执行权限
-# =====================================================
-echo ">>> [4/7] 修复 Lucky 执行权限..."
+echo ">>> [3/6] 修复 Lucky 执行权限..."
 find feeds/lucky/ -type f \( -name "lucky" -o -name "lucky*" \) \
     -exec chmod +x {} \; 2>/dev/null || true
 find package/ -path "*/lucky/files*" -type f \
@@ -65,7 +49,7 @@ find package/ -path "*/lucky/files*" -type f \
 echo ">>> Lucky 权限修复完成"
 
 # =====================================================
-# 5. ★ WiFi 修复：只设置 SSID / 密码，不手动 wifi up ★
+# 4. ★ WiFi 修复：只设置 SSID / 密码，不手动 wifi up ★
 # =====================================================
 cat > files/etc/uci-defaults/99-wifi-setup << 'WIFI_EOF'
 #!/bin/sh
@@ -90,13 +74,13 @@ logger -t wifi-setup "WiFi SSID and key configured"
 exit 0
 WIFI_EOF
 chmod +x files/etc/uci-defaults/99-wifi-setup
-echo ">>> [5/7] WiFi 配置已写入（不手动 wifi up）"
+echo ">>> [4/6] WiFi 配置已写入（不手动 wifi up）"
 
 # =====================================================
-# 6. ★ Docker 数据目录 + 自动挂载修复 ★
+# 5. ★ Docker 数据目录 + 自动挂载修复 ★
 # =====================================================
 
-# 6a. 自动挂载配置（打开全局自动挂载 + 添加 mmcblk0p7）
+# 5a. 自动挂载配置（打开全局自动挂载 + 添加 mmcblk0p7）
 cat > files/etc/uci-defaults/10-fstab << 'FSTAB_EOF'
 #!/bin/sh
 # 全局：自动挂载未分配空间
@@ -119,7 +103,7 @@ exit 0
 FSTAB_EOF
 chmod +x files/etc/uci-defaults/10-fstab
 
-# 6b. Docker 运行时配置（确保 UCI 提前执行）
+# 5b. Docker 运行时配置（确保 UCI 提前执行）
 cat > files/etc/uci-defaults/20-docker-config << 'DOCKER_EOF'
 #!/bin/sh
 # 无论分区是否挂载，先设置 UCI 中的 Docker 数据目录
@@ -169,10 +153,10 @@ exit 0
 DOCKER_EOF
 chmod +x files/etc/uci-defaults/20-docker-config
 
-echo ">>> [6/7] Docker 配置完成（分区自动挂载 + 数据目录已设置）"
+echo ">>> [5/6] Docker 配置完成（分区自动挂载 + 数据目录已设置）"
 
 # =====================================================
-# 7. Web 界面 / Samba / rpcd 优化
+# 6. Web 界面 / Samba / rpcd 优化
 # =====================================================
 cat > files/etc/uci-defaults/98-system-optimize << 'OPT_EOF'
 #!/bin/sh
@@ -199,7 +183,7 @@ uci commit luci 2>/dev/null || true
 exit 0
 OPT_EOF
 chmod +x files/etc/uci-defaults/98-system-optimize
-echo ">>> [7/7] 系统优化脚本已写入"
+echo ">>> [6/6] 系统优化脚本已写入"
 
 # =====================================================
 # Banner
@@ -216,12 +200,8 @@ BAN_EOF
 
 echo ""
 echo "======================================"
-echo " DIY 第二部分全部完成"
-echo " 主机名          : WH3000"
-echo " 主题            : luci-theme-design"
-echo " docker-compose  : 锁定 v2.27.1"
-echo " Lucky 权限      : 已修复"
-echo " WiFi 设置       : SSID/密码 已写入，不手动 wifi up"
-echo " Docker 数据目录 : /mnt/mmcblk0p7/docker（自动挂载已启用）"
-echo " 系统优化        : 98-system-optimize"
+echo " DIY 第二部分全部完成（无 docker-compose）"
+echo " 主机名 / 主题 / Lucky 权限"
+echo " WiFi 配置（不手动 wifi up）"
+echo " Docker 数据目录 : /mnt/mmcblk0p7/docker（自动挂载）"
 echo "======================================"
